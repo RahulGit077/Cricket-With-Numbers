@@ -1,4 +1,9 @@
 import java.util.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 class Players{
     static int[] playerScores,systemScores;
     static String[] playerNames,systemNames;
@@ -33,24 +38,24 @@ class Players{
         sIndex++;
     }
 }
-class HandCricket extends Players{
-    static int  toss, inning, target, in1 = 0, in2 = 0;
+class HandCricket extends Players {
+    static int toss, inning, target, in1 = 0, in2 = 0;
     static boolean toss_sts, res;
 
     public static void play() {
         Scanner sc = new Scanner(System.in);
         System.out.println("Enter the Number of wickets");
         now = sc.nextInt();
-        playerNames=new String[now];
-        playerScores=new int[now];
-        systemScores=new int[now];
-        systemNames=new String[now];
+        playerNames = new String[now];
+        playerScores = new int[now];
+        systemScores = new int[now];
+        systemNames = new String[now];
         System.out.println("Toss");
         System.out.println("\t1.Head\t2.Tail");
         Random r = new Random();
         tossing(sc, r);
         inning1(sc, r);
-        System.out.println("Target : "+target);
+        System.out.println("Target : " + target);
         inning2(sc, r);
         result();
     }
@@ -420,6 +425,49 @@ class OverMatch extends HandCricket{
         s.append(" ".repeat(Math.max(0,36-i)));
         s.append(e);
         return s.toString();
+    }
+    private static void setDataBase(boolean ts,int inn,int s1,int w1,String ov1,int s2,int w2,String ov2,boolean rs,String man){
+        String url = "jdbc:mysql://localhost:3306/handcricket";
+        String user = "root";  // Use your MySQL username
+        String password = "root";
+        Connection connection = null;
+        try{
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            connection = DriverManager.getConnection(url, user, password);
+            String query = " insert into matches (toss,in_1,in_2,result,man_of_match) values (?,?,?,?,?)";
+            PreparedStatement preparedStatement = connection.prepareStatement(query);
+            String settos="";
+            if(ts){
+                settos+="WIN/";
+            }
+            else{
+                settos="LOSS/";
+            }
+            if(inn==1)
+                settos+="BAT";
+            else
+                settos+="BOWL";
+            String r=rs?"WON":"LOST";
+            preparedStatement.setString(1,settos);
+            preparedStatement.setString(2,s1+" - "+w1+" "+ov1);
+            preparedStatement.setString(3,s2+" - "+w2+" "+ov2);
+            preparedStatement.setString(4,r);
+            preparedStatement.setString(5,man);
+            preparedStatement.executeUpdate();
+        }
+        catch (Exception e){
+            System.out.println("Database upload failed - by Ranranjer");
+        }
+        finally {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
     }
     private static void initArrays(){
         playerNames=new String[now];
@@ -950,11 +998,87 @@ class OverMatch extends HandCricket{
         setSysPoints();
         System.out.println("Man of the match : ");
         double MoM=getMax(points,sPoints);
+        String momdb="";
         for(int i=0;i<now;i++){
-            if(MoM==points[i])
-                System.out.println(playerNames[i]+"\t"+MoM);
-            if(MoM==sPoints[i])
-                System.out.println(systemNames[i]+"\t"+MoM);
+            if(MoM==points[i]) {
+                System.out.println(playerNames[i] + "\t" + MoM);
+                momdb=playerNames[i];
+                break;
+            }
+            if(MoM==sPoints[i]) {
+                System.out.println(systemNames[i] + "\t" + MoM);
+                momdb=systemNames[i];
+            }
+        }
+        switch (inning){
+            case 1:
+                setDataBase(toss_sts,inning,score_2,finalWicket,"("+eOver+"."+eBall+")",score_1,sysWicket,"("+sOver+"."+sBall+")",res,momdb);
+                break;
+            case 2:
+                setDataBase(toss_sts,inning,score_1,sysWicket,"("+sOver+"."+sBall+")",score_2,finalWicket,"("+eOver+"."+eBall+")",res,momdb);
+        }
+    }
+    public static void dispHistory(){
+        Scanner sc= new Scanner(System.in);
+        String url = "jdbc:mysql://localhost:3306/handcricket";
+        String user = "root";  // Use your MySQL username
+        String password = "root";  // Use your MySQL password
+        Connection connection = null;
+        try{
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            connection=DriverManager.getConnection(url,user,password);
+            String query="SELECT COUNT(*) AS total_tuples FROM matches";
+            PreparedStatement pr = connection.prepareStatement(query);
+            ResultSet resultt=pr.executeQuery();
+            int tot_mat = 0;
+
+            if (resultt.next()) {
+                tot_mat = resultt.getInt("total_tuples");
+            }
+            query="SELECT COUNT(*) AS total_tuples FROM matches where result = 'won'";
+            pr = connection.prepareStatement(query);
+            resultt=pr.executeQuery();
+            int tot_won = 0,id=0;
+
+            if(resultt.next()) {
+                tot_won = resultt.getInt("total_tuples");
+            }
+            System.out.println("Total matches played: "+tot_mat);
+            System.out.println("Matches WON: "+tot_won);
+            boolean fl=true;
+            while (fl) {
+                try{
+                    System.out.println("Enter the Match ID");
+                    String t=sc.next();
+                    id=Integer.parseInt(t);
+                    fl=false;
+                }catch(Exception e){
+                    System.out.println("Skip it");
+                }
+            }
+            query="SELECT * from matches where match_id ="+id;
+            pr = connection.prepareStatement(query);
+            resultt=pr.executeQuery();
+            if(resultt.next()){
+                System.out.println("------------------------------------------------");
+                System.out.println("Match id: "+resultt.getInt("match_id"));
+                System.out.println("Toss: "+resultt.getString("toss"));
+                System.out.println("Inning 1: "+resultt.getString("in_1"));
+                System.out.println("Inning 2: "+resultt.getString("in_2"));
+                System.out.println("Result: "+resultt.getString("result"));
+                System.out.println("Man of Match: "+resultt.getString("man_of_match"));
+            }
+        }catch (Exception e){
+            System.out.println("Something went wrong"+e);
+        }
+        finally{
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 }
@@ -962,8 +1086,8 @@ class OverMatch extends HandCricket{
 public class Main {
     public static void main(String[] args) {
 
-        System.out.println("Enter game option : ");
-        System.out.println("\t1.Hand Cricket\t2.Over Match");
+    System.out.println("Enter game option : ");
+        System.out.println("\t1.Hand Cricket\t2.Over Match\t3.History");
         Scanner sc= new Scanner(System.in);
         int choice=sc.nextInt();
         switch(choice){
@@ -973,6 +1097,8 @@ public class Main {
             case 2:
                 OverMatch.play();
                 break;
+            case 3:
+                OverMatch.dispHistory();
         }
     }
 }
